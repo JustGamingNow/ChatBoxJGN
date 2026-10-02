@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-transparent text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitch Clean Chat Overlay</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800;900&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* STREAM_CHUNK:Styling custom scrollbar and chat slide-up animations... */
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 9999px;
+    }
+
+    @keyframes messageSlideUp {
+      0% { opacity: 0; transform: translateY(20px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    body.obs-mode {
+      background: transparent !important;
+      overflow: hidden;
+    }
+
+    .obs-mode #app-header,
+    .obs-mode #sidebar-left,
+    .obs-mode #input-container,
+    .obs-mode #chat-header {
+      display: none !important;
+    }
+
+    .obs-mode #main-chat-wrapper {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+    }
+
+    /* Streamlabs Clean Chat Card Styling with NO Background and Slide-Up */
+    .chat-card {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 3px 0 !important;
+      margin-bottom: 3px;
+      animation: messageSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      transition: opacity 0.5s ease-out;
+    }
+
+    .chat-username {
+      font-weight: 800 !important;
+    }
+
+    .chat-text {
+      font-weight: 600 !important;
+      color: #ffffff;
+    }
+
+    /* Text Outline for Game Readability (Matches Reference Image Style) */
+    .text-stroke-enabled .chat-text,
+    .text-stroke-enabled .chat-username {
+      text-shadow: 
+        1.5px 1.5px 0 #000,
+        -1.5px -1.5px 0 #000,
+        1.5px -1.5px 0 #000,
+        -1.5px 1.5px 0 #000,
+        0px 2px 4px rgba(0,0,0,0.9),
+        0px 4px 10px rgba(0,0,0,0.5);
+    }
+
+    /* Stream-style Badges matching reference */
+    .sl-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1px 3px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
+    #exit-obs-btn {
+      display: none;
+    }
+    .obs-mode #exit-obs-btn {
+      display: flex !important;
+    }
+  </style>
+</head>
+
+<body class="h-full font-sans antialiased bg-slate-950 text-slate-100 flex flex-col">
+
+  <!-- STREAM_CHUNK:Rendering application header... -->
+  <header id="app-header" class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+      
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
+          <i class="fa-brands fa-twitch text-white text-lg"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-sm tracking-tight text-white flex items-center gap-2">
+            Twitch Clean Chat <span class="text-purple-400 font-mono text-[10px] px-2 py-0.5 rounded-full bg-purple-950 border border-purple-800">OBS READY</span>
+          </h1>
+          <p class="text-[11px] text-slate-400">Borderized Clean Overlay • Reference Style</p>
+        </div>
+      </div>
+
+      <div id="active-connections-bar" class="hidden md:flex items-center gap-2 overflow-x-auto py-1"></div>
+
+      <div class="flex items-center gap-2">
+        <button onclick="copyOBSLink()" title="Copy OBS Link with active channels" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 transition flex items-center gap-1.5 shadow-sm">
+          <i class="fa-solid fa-link text-emerald-400"></i>
+          <span>Copy OBS Link</span>
+        </button>
+
+        <button onclick="openInNewTab()" title="Popout Tab" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-purple-950 hover:bg-purple-900 text-purple-300 border border-purple-800 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-arrow-up-right-from-square text-purple-400"></i>
+          <span>Popout Tab</span>
+        </button>
+
+        <button onclick="toggleOBSMode()" title="Toggle OBS Transparent Mode" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-expand text-slate-400"></i>
+          <span>OBS Mode</span>
+        </button>
+
+        <button onclick="clearChatMessages()" title="Clear Chat" class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-red-400 border border-slate-700 transition">
+          <i class="fa-solid fa-trash-can"></i>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- STREAM_CHUNK:Initializing main application body... -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 md:p-6 flex flex-col gap-4 overflow-hidden">
+
+    <!-- Connect Form Input & Custom OBS Link Generator Button -->
+    <div id="input-container" class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-xl backdrop-blur-sm">
+      <form id="connect-form" onsubmit="handleConnectForm(event)" class="flex flex-col sm:flex-row gap-3">
+        
+        <div class="relative flex-1">
+          <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+            <i class="fa-solid fa-hashtag"></i>
+          </div>
+          <input 
+            type="text" 
+            id="stream-url-input"
+            placeholder="Enter Twitch channel name (e.g. kaicenat, tarik)..."
+            class="w-full pl-10 pr-4 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+            required
+          />
+        </div>
+
+        <button 
+          type="submit" 
+          id="connect-btn"
+          class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-sm transition shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
+        >
+          <i class="fa-brands fa-twitch"></i>
+          <span>Connect Stream</span>
+        </button>
+
+        <button 
+          type="button" 
+          onclick="copyOBSLink()"
+          class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+          title="Copies custom link pre-loaded with your connected channels for OBS Browser Source"
+        >
+          <i class="fa-solid fa-magic"></i>
+          <span>Copy OBS Link</span>
+        </button>
+
+      </form>
+
+      <div class="mt-3 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-2 border-t border-slate-800 pt-2.5">
+        <span class="text-purple-400 font-medium">Twitch IRC Multi-Stream Ready</span>
+        <div class="flex items-center gap-2">
+          <span class="text-slate-500">Quick Test:</span>
+          <button type="button" onclick="connectTwitchStream('tarik')" class="px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800 text-xs">#tarik</button>
+          <button type="button" onclick="startTestSimulation()" class="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 text-xs flex items-center gap-1">
+            <i class="fa-solid fa-play text-[9px]"></i> Test Feed
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0">
+
+      <!-- Left Sidebar: Customizer -->
+      <aside id="sidebar-left" class="lg:col-span-3 bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col gap-4 overflow-y-auto text-xs">
+        
+        <div>
+          <h2 class="font-bold text-purple-400 mb-3 flex items-center gap-2">
+            <i class="fa-solid fa-sliders"></i> Overlay Settings
+          </h2>
+          
+          <div class="space-y-1.5 mb-3">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-400">Font Size</span>
+              <span id="font-size-val" class="text-purple-400 font-mono font-bold">16px</span>
+            </div>
+            <input type="range" id="font-size-range" min="12" max="30" value="16" oninput="updateFontSize(this.value)" class="w-full accent-purple-400 cursor-pointer">
+          </div>
+
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-slate-300">Text Outline (Shadows)</span>
+            <input type="checkbox" id="stroke-toggle" onchange="toggleTextStroke(this.checked)" class="rounded border-slate-700 bg-slate-950 text-purple-500" checked>
+          </div>
+
+          <div class="space-y-1.5">
+            <span class="text-slate-400">Message Auto-Hide</span>
+            <select id="autohide-select" onchange="appState.autoHideSeconds = parseInt(this.value)" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-200">
+              <option value="0">Never Hide</option>
+              <option value="15" selected>Hide after 15 seconds</option>
+              <option value="30">Hide after 30 seconds</option>
+            </select>
+          </div>
+        </div>
+
+      </aside>
+
+      <!-- Center Main Transparent Chat Feed -->
+      <main id="main-chat-wrapper" class="lg:col-span-9 bg-transparent border-0 rounded-2xl flex flex-col relative overflow-hidden shadow-none">
+        
+        <div id="chat-header" class="px-4 py-2.5 border-b border-slate-800 bg-slate-950/80 rounded-t-2xl flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2">
+            <div class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></div>
+            <span class="font-bold text-slate-200 uppercase tracking-wider">Live Chat Stream</span>
+          </div>
+          <div class="flex items-center gap-3 text-slate-400">
+            <span id="message-count-badge" class="bg-slate-900 px-2.5 py-0.5 rounded-full font-mono text-[11px]">0 msg</span>
+            <button onclick="togglePauseScroll()" id="pause-scroll-btn" title="Pause Auto-scroll" class="hover:text-white">
+              <i class="fa-solid fa-pause"></i>
+            </button>
+          </div>
+        </div>
+
+        <div id="sandbox-warning-banner" class="hidden bg-amber-950/90 border-b border-amber-800 p-2.5 text-xs text-amber-200 flex items-center justify-between gap-2">
+          <span><strong>Sandbox Notice:</strong> Direct WebSockets restricted in preview. Click Popout Tab for live IRC.</span>
+          <button onclick="openInNewTab()" class="px-2.5 py-1 rounded bg-amber-400 text-slate-950 font-bold text-[11px]">Popout</button>
+        </div>
+
+        <!-- 100% Transparent Streamlabs Clean Chat Window with Slide-Up Animation -->
+        <div 
+          id="chat-messages-container" 
+          class="flex-1 p-4 overflow-y-auto space-y-1 font-sans text-stroke-enabled"
+          style="font-size: 16px; background: transparent !important;"
+          onscroll="handleChatScroll()"
+        >
+          <div id="welcome-message" class="text-center py-20 px-4 max-w-sm mx-auto">
+            <div class="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 flex items-center justify-center mx-auto mb-3 shadow-lg">
+              <i class="fa-brands fa-twitch text-xl"></i>
+            </div>
+            <h3 class="font-bold text-slate-100 text-sm mb-1">Borderless Clean Chat</h3>
+            <p class="text-xs text-slate-400 mb-4">Connect a Twitch channel above or click Test Feed to preview incoming messages.</p>
+            <button onclick="startTestSimulation()" class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition shadow-lg">
+              Launch Test Feed
+            </button>
+          </div>
+        </div>
+
+        <div id="jump-bottom-btn" class="absolute bottom-4 right-4 hidden">
+          <button onclick="scrollToBottom(true)" class="bg-purple-600 text-white font-bold text-xs px-3.5 py-1 rounded-full shadow-xl flex items-center gap-2">
+            <i class="fa-solid fa-arrow-down"></i> New Messages
+          </button>
+        </div>
+
+      </main>
+
+    </div>
+  </main>
+
+  <button 
+    id="exit-obs-btn" 
+    onclick="toggleOBSMode()" 
+    class="fixed top-4 right-4 z-50 px-3.5 py-2 rounded-xl bg-slate-900 text-white border border-purple-500/50 shadow-2xl hover:bg-slate-800 text-xs font-bold flex items-center gap-2"
+  >
+    <i class="fa-solid fa-compress text-purple-400"></i> Exit OBS Mode
+  </button>
+
+  <!-- STREAM_CHUNK:Defining main script controller... -->
+  <script>
+    const appState = {
+      connections: [],
+      maxMessages: 150,
+      autoHideSeconds: 15,
+      isOBSMode: false,
+      isPaused: false,
+      hideCommands: true,
+      messageCount: 0,
+      simulationInterval: null
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const channelsParam = params.get('channels');
+      if (channelsParam) {
+        if (params.get('obs') === '1') toggleOBSMode();
+        channelsParam.split(',').forEach(ch => {
+          const cleanCh = ch.trim().toLowerCase();
+          if (cleanCh) connectTwitchStream(cleanCh);
+        });
+      }
+    });
+
+    function hideWelcomeMessage() {
+      const welcome = document.getElementById('welcome-message');
+      if (welcome) welcome.style.display = 'none';
+    }
+
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      toast.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl border shadow-xl text-xs font-semibold bg-purple-950 border-purple-800 text-purple-200 transition-all`;
+      toast.innerHTML = message;
+      document.body.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    function dispatchChatMessage(data) {
+      if (appState.isPaused) return;
+      if (appState.hideCommands && data.text && data.text.trim().startsWith('!')) return;
+
+      const container = document.getElementById('chat-messages-container');
+      if (!container) return;
+
+      hideWelcomeMessage();
+      appState.messageCount++;
+      document.getElementById('message-count-badge').textContent = appState.messageCount + ' msg';
+
+      const card = document.createElement('div');
+      card.className = `chat-card flex items-start`;
+
+      let badgesHtml = '';
+      if (data.badges && data.badges.length) {
+        badgesHtml = data.badges.map(b => `<span class="sl-badge ${b.color}">${escapeHtml(b.title)}</span>`).join('');
+      }
+
+      const userColor = data.color || generateUserColor(data.username);
+      
+      // Streamer name is excluded from message display; shows badges, username, and text with reference layout
+      card.innerHTML = `
+        <div class="flex-1 min-w-0">
+          <div class="inline-flex items-baseline flex-wrap gap-y-1">
+            ${badgesHtml}
+            <span class="chat-username mr-1.5" style="color: ${userColor}">${escapeHtml(data.username)}<span class="text-slate-400 ml-0.5">:</span></span>
+            <span class="chat-text break-words">${escapeHtml(data.text)}</span>
+          </div>
+        </div>
+      `;
+
+      container.appendChild(card);
+
+      if (appState.autoHideSeconds > 0) {
+        setTimeout(() => {
+          card.style.opacity = '0';
+          setTimeout(() => card.remove(), 500);
+        }, appState.autoHideSeconds * 1000);
+      }
+
+      while (container.children.length > appState.maxMessages) {
+        container.removeChild(container.firstChild);
+      }
+
+      scrollToBottom();
+    }
+
+    function handleConnectForm(e) {
+      e.preventDefault();
+      const input = document.getElementById('stream-url-input');
+      let channel = input.value.trim().toLowerCase();
+      const twitchMatch = channel.match(/(?:twitch\.tv\/)([a-zA-Z0-9_]+)/i);
+      if (twitchMatch) channel = twitchMatch[1];
+
+      if (channel) connectTwitchStream(channel);
+      input.value = '';
+    }
+
+    function connectTwitchStream(channel) {
+      if (appState.connections.some(c => c.target === channel)) {
+        showToast(`Already connected to #${channel}`, 'info');
+        return;
+      }
+
+      const connObj = { id: 'tw_' + channel + Date.now(), target: channel, ws: null, status: 'connecting' };
+      appState.connections.push(connObj);
+      renderActiveConnections();
+
+      try {
+        const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+        connObj.ws = ws;
+
+        ws.onopen = () => {
+          connObj.status = 'connected';
+          renderActiveConnections();
+          ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+          ws.send('PASS SCHMOOPIIE');
+          ws.send(`NICK justinfan${Math.floor(10000 + Math.random() * 89999)}`);
+          ws.send(`JOIN #${channel}`);
+          showToast(`Connected to #${channel}!`, 'success');
+        };
+
+        ws.onmessage = (event) => {
+          const lines = event.data.split('\r\n');
+          lines.forEach(line => {
+            if (line.startsWith('PING')) ws.send('PONG :tmi.twitch.tv');
+            else parseTwitchIRCMessage(line, channel);
+          });
+        };
+
+        ws.onerror = () => handleCanvasSandbox(connObj);
+        ws.onclose = () => { connObj.status = 'disconnected'; renderActiveConnections(); };
+      } catch (e) {
+        handleCanvasSandbox(connObj);
+      }
+    }
+
+    function parseTwitchIRCMessage(line, channel) {
+      if (line.includes('PRIVMSG')) {
+        try {
+          const parts = line.split('PRIVMSG');
+          const meta = parts[0];
+          const text = parts[1].split(' :').slice(1).join(' :').trim();
+          
+          let username = 'Anonymous';
+          const nickMatch = meta.match(/display-name=([^;]+)/) || line.match(/:([^!]+)!/);
+          if (nickMatch) username = nickMatch[1];
+          
+          let color = null;
+          const colorMatch = meta.match(/color=(#[0-9a-fA-F]{6})/);
+          if (colorMatch) color = colorMatch[1];
+
+          const badges = [];
+          if (meta.includes('mod=1') || meta.includes('badges=moderator')) badges.push({ title: 'Mod', color: 'bg-emerald-600 text-white' });
+          if (meta.includes('subscriber=1') || meta.includes('badges=subscriber')) badges.push({ title: 'Sub', color: 'bg-purple-600 text-white' });
+          if (meta.includes('badges=vip')) badges.push({ title: 'VIP', color: 'bg-pink-600 text-white' });
+
+          dispatchChatMessage({ channel, username, color, text, badges });
+        } catch (e) {}
+      }
+    }
+
+    function handleCanvasSandbox(connObj) {
+      connObj.status = 'disconnected';
+      renderActiveConnections();
+      document.getElementById('sandbox-warning-banner').classList.remove('hidden');
+    }
+
+    function renderActiveConnections() {
+      const bar = document.getElementById('active-connections-bar');
+      if (!bar) return;
+      if (appState.connections.length === 0) {
+        bar.innerHTML = '<span class="text-xs text-slate-500 italic">No channels connected.</span>';
+        return;
+      }
+      bar.innerHTML = '';
+      appState.connections.forEach(c => {
+        let dot = c.status === 'connected' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse';
+        if (c.status === 'disconnected') dot = 'bg-red-500';
+
+        bar.innerHTML += `
+          <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full border bg-purple-950/80 border-purple-800 text-purple-200 text-[11px] font-bold">
+            <i class="fa-brands fa-twitch"></i> <span>${escapeHtml(c.target)}</span>
+            <span class="w-1.5 h-1.5 rounded-full ${dot} ml-1"></span>
+            <button onclick="disconnectStream('${c.id}')" class="hover:text-white ml-1"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+        `;
+      });
+    }
+
+    function disconnectStream(id) {
+      const idx = appState.connections.findIndex(c => c.id === id);
+      if (idx !== -1) {
+        const c = appState.connections[idx];
+        if (c.ws) c.ws.close();
+        appState.connections.splice(idx, 1);
+        renderActiveConnections();
+        showToast(`Removed #${c.target}`, 'info');
+      }
+    }
+
+    function startTestSimulation() {
+      if (appState.simulationInterval) clearInterval(appState.simulationInterval);
+      
+      const mockNames = ['KickVerified', 'FYPViewer', 'gg4days', 'lifefanatic', 'ModSquad', 'KickVIPFan'];
+      const mockMessages = ['The vibes are immaculate today', 'This stream is popping off!', 'Let\'s get this W!', 'That was an insane play!', 'Notification squad where you at?', 'Plot twist: he wins'];
+      
+      showToast('Started Test Chat Simulation', 'success');
+      
+      appState.simulationInterval = setInterval(() => {
+        const name = mockNames[Math.floor(Math.random() * mockNames.length)];
+        const msg = mockMessages[Math.floor(Math.random() * mockMessages.length)];
+        const badgeTypes = [
+          { title: 'Mod', color: 'bg-emerald-600 text-white' },
+          { title: 'Sub', color: 'bg-purple-600 text-white' },
+          { title: 'VIP', color: 'bg-pink-600 text-white' },
+          { title: 'Founder', color: 'bg-amber-600 text-white' }
+        ];
+        const badges = Math.random() > 0.3 ? [badgeTypes[Math.floor(Math.random() * badgeTypes.length)]] : [];
+        
+        dispatchChatMessage({
+          channel: 'demo',
+          username: name,
+          color: generateUserColor(name),
+          text: msg,
+          badges: badges
+        });
+      }, 750);
+    }
+
+    function copyOBSLink() {
+      const channels = appState.connections.map(c => c.target).join(',');
+      const baseUrl = window.location.origin + window.location.pathname;
+      const obsLink = channels ? `${baseUrl}?channels=${channels}&obs=1` : `${baseUrl}?obs=1`;
+
+      const tempInput = document.createElement('input');
+      document.body.appendChild(tempInput);
+      tempInput.value = obsLink;
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+
+      showToast('Copied OBS Link to clipboard! Paste directly into OBS Browser Source.', 'success');
+    }
+
+    function openInNewTab() {
+      const channels = appState.connections.map(c => c.target).join(',');
+      const baseUrl = window.location.origin + window.location.pathname;
+      const targetUrl = channels ? `${baseUrl}?channels=${channels}` : baseUrl;
+      window.open(targetUrl, '_blank');
+    }
+
+    function handleChatScroll() {
+      const container = document.getElementById('chat-messages-container');
+      const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 60;
+      const jumpBtn = document.getElementById('jump-bottom-btn');
+      if (!isAtBottom) jumpBtn.classList.remove('hidden');
+      else jumpBtn.classList.add('hidden');
+    }
+
+    function scrollToBottom(force = false) {
+      if (appState.isPaused && !force) return;
+      const container = document.getElementById('chat-messages-container');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function togglePauseScroll() {
+      appState.isPaused = !appState.isPaused;
+      const btn = document.getElementById('pause-scroll-btn');
+      btn.innerHTML = appState.isPaused ? '<i class="fa-solid fa-play text-emerald-400"></i>' : '<i class="fa-solid fa-pause"></i>';
+    }
+
+    function toggleOBSMode() {
+      appState.isOBSMode = !appState.isOBSMode;
+      document.body.classList.toggle('obs-mode', appState.isOBSMode);
+      if (appState.isOBSMode) showToast('OBS Overlay Mode Enabled (Transparent)', 'info');
+    }
+
+    function toggleTextStroke(enabled) {
+      const container = document.getElementById('chat-messages-container');
+      if (enabled) container.classList.add('text-stroke-enabled');
+      else container.classList.remove('text-stroke-enabled');
+    }
+
+    function updateFontSize(val) {
+      document.getElementById('font-size-val').textContent = val + 'px';
+      document.getElementById('chat-messages-container').style.fontSize = `${val}px`;
+    }
+
+    function clearChatMessages() {
+      document.getElementById('chat-messages-container').innerHTML = '';
+      appState.messageCount = 0;
+      document.getElementById('message-count-badge').textContent = '0 msg';
+    }
+
+    function generateUserColor(username) {
+      const colors = ['#31c3a6', '#1E90FF', '#FF69B4', '#FF4500', '#DA70D6', '#00FFFF', '#FFD700', '#FF6347', '#A78BFA'];
+      let hash = 0;
+      for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash);
+      return colors[Math.abs(hash) % colors.length];
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
